@@ -135,7 +135,7 @@ In the second terminal, start Vite. Make sure this terminal is in the `frontend`
 
 ```powershell
 Set-Location "C:\Users\Lenovo\OneDrive - Anna University\Desktop\Res_ai\frontend"
-npm run dev -- --host localhost
+npm run dev
 ```
 
 Keep this terminal open too. Wait for Vite to display its `Local` URL.
@@ -167,9 +167,9 @@ To run the app again, keep the terminals in their respective project folders and
 | `npm` or `python` is not recognized | Install Node.js or Python, ensure Python is added to PATH, then restart PowerShell. |
 | `Cannot find module` or missing frontend packages | In the `frontend` folder run `npm install`, then restart Vite. |
 | Backend packages are missing | From the project root run `.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt`. |
-| Address/port is already in use | Find the terminal already running that server and stop it with Ctrl+C; then start it again. |
+| Port 5173 is already in use | Stop the other frontend terminal with Ctrl+C. The project pins Vite to port 5173 and reports an error rather than silently switching to another port. |
 | Page is blank or appears stale | Confirm Vite started successfully, reload the page, and check the terminal for compilation errors. |
-| A link to `localhost:5173` gives 404 | Stop old Vite instances with Ctrl+C, start the frontend using `npm run dev -- --host localhost` from `frontend`, and reopen the Vite URL printed in that terminal. |
+| A link to `localhost:5173` gives 404 | Stop old Vite instances with Ctrl+C, start the frontend using `npm run dev` from `frontend`, and reopen `http://localhost:5173`. |
 
 The frontend uses `http://127.0.0.1:8000` for API requests by default. To use another backend URL, set `VITE_API_BASE_URL` in the frontend environment before starting/building Vite. The backend allows local Vite development origins on port 5173.
 
