@@ -8,9 +8,17 @@ import RoadSimulation from './components/RoadSimulation'
 import ScenarioControls from './components/ScenarioControls'
 import Sidebar from './components/Sidebar'
 import { downloadEvaluation, getHealth, getScenarios, runEvaluation, runSimulation } from './services/api'
-import type { Controls, EvaluationResult, Scenario, SimulationResult } from './types'
+import type { Controls, EvaluationResult, PolicyMetrics, PolicyName, Scenario, SimulationResult } from './types'
 
 const ResultsCharts = lazy(() => import('./components/ResultsCharts'))
+
+interface MetricObservation {
+  collision: boolean
+  near_miss: boolean
+  unnecessary_emergency_braking: boolean
+  reaction_time_s: number | null
+  stopping_distance_m: number | null
+}
 
 function initialControls(scenario: Scenario): Controls {
   return {
@@ -26,11 +34,51 @@ function metricValue(value: number | null | undefined, suffix = '%'): string {
   return value == null ? '—' : `${value.toFixed(value % 1 === 0 ? 0 : 1)}${suffix}`
 }
 
+function summarizeObservations(observations: MetricObservation[]): PolicyMetrics | undefined {
+  if (observations.length === 0) return undefined
+  const reactionTimes = observations.flatMap((episode) =>
+    episode.reaction_time_s == null ? [] : [episode.reaction_time_s],
+  )
+  const stoppingDistances = observations.flatMap((episode) =>
+    episode.stopping_distance_m == null ? [] : [episode.stopping_distance_m],
+  )
+  const rate = (matches: number) => Math.round((10000 * matches) / observations.length) / 100
+  const mean = (values: number[]) =>
+    values.length > 0
+      ? Math.round((1000 * values.reduce((sum, value) => sum + value, 0)) / values.length) / 1000
+      : null
+
+  return {
+    total_episodes: observations.length,
+    collision_rate_pct: rate(observations.filter((episode) => episode.collision).length),
+    near_miss_rate_pct: rate(observations.filter((episode) => episode.near_miss).length),
+    unnecessary_braking_rate_pct: rate(
+      observations.filter((episode) => episode.unnecessary_emergency_braking).length,
+    ),
+    average_reaction_time_s: mean(reactionTimes),
+    average_stopping_distance_m: mean(stoppingDistances),
+  }
+}
+
+function observationFromEpisode(episode: MetricObservation): MetricObservation {
+  return {
+    collision: episode.collision,
+    near_miss: episode.near_miss,
+    unnecessary_emergency_braking: episode.unnecessary_emergency_braking,
+    reaction_time_s: episode.reaction_time_s,
+    stopping_distance_m: episode.stopping_distance_m,
+  }
+}
+
 export default function App() {
   const [scenarios, setScenarios] = useState<Scenario[]>([])
   const [controls, setControls] = useState<Controls | null>(null)
   const [simulation, setSimulation] = useState<SimulationResult | null>(null)
   const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null)
+  const [metricObservations, setMetricObservations] = useState<Record<PolicyName, MetricObservation[]>>({
+    baseline: [],
+    safety_aware: [],
+  })
   const [backendOnline, setBackendOnline] = useState(false)
   const [simulationLoading, setSimulationLoading] = useState(false)
   const [evaluationLoading, setEvaluationLoading] = useState(false)
@@ -89,6 +137,13 @@ export default function App() {
         visibility: controls.visibility,
       })
       setSimulation(result)
+      setMetricObservations((current) => ({
+        ...current,
+        [result.inputs.policy]: [
+          ...current[result.inputs.policy],
+          observationFromEpisode(result),
+        ],
+      }))
       setBackendOnline(true)
     } catch (runError) {
       setBackendOnline(false)
@@ -102,8 +157,17 @@ export default function App() {
     setEvaluationLoading(true)
     setError(null)
     try {
-      const result = await runEvaluation(42, 20)
+      const seed = crypto.getRandomValues(new Uint32Array(1))[0]
+      const result = await runEvaluation(seed, 20)
       setEvaluation(result)
+      setMetricObservations({
+        baseline: result.episode_records
+          .filter((episode) => episode.policy === 'baseline')
+          .map(observationFromEpisode),
+        safety_aware: result.episode_records
+          .filter((episode) => episode.policy === 'safety_aware')
+          .map(observationFromEpisode),
+      })
       setBackendOnline(true)
     } catch (runError) {
       setBackendOnline(false)
@@ -118,6 +182,7 @@ export default function App() {
     if (scenario) setControls(initialControls(scenario))
     setSimulation(null)
     setEvaluation(null)
+    setMetricObservations({ baseline: [], safety_aware: [] })
     setError(null)
   }
 
@@ -133,7 +198,8 @@ export default function App() {
     }
   }
 
-  const metrics = evaluation?.metrics_by_policy.safety_aware
+  const metrics = controls ? summarizeObservations(metricObservations[controls.policy]) : undefined
+  const policyLabel = controls?.policy === 'baseline' ? 'Baseline' : 'Safety-aware'
 
   return (
     <div className="app-shell">
@@ -161,11 +227,14 @@ export default function App() {
         )}
 
         <section className="metrics-grid" aria-label="Policy outcome overview">
-          <MetricCard label="Collision rate" value={metricValue(metrics?.collision_rate_pct)} caption={metrics ? `${metrics.total_episodes} safety-aware episodes` : 'Run an evaluation to measure'} tone="red" icon="×" />
-          <MetricCard label="Near-miss rate" value={metricValue(metrics?.near_miss_rate_pct)} caption="Minimum separation ≤ 3 m" tone="amber" icon="!" />
+          <MetricCard label="Collision rate" value={metricValue(metrics?.collision_rate_pct)} caption={metrics ? `${metrics.total_episodes} ${policyLabel} episodes` : 'Run a simulation or policy evaluation'} tone="red" icon="×" />
+          <MetricCard label="Near-miss rate" value={metricValue(metrics?.near_miss_rate_pct)} caption="No collision; minimum separation ≤ 3 m" tone="amber" icon="!" />
           <MetricCard label="Unnecessary braking" value={metricValue(metrics?.unnecessary_braking_rate_pct)} caption="Emergency stop with no in-path hazard" tone="blue" icon="↘" />
-          <MetricCard label="Mean reaction time" value={metricValue(metrics?.average_reaction_time_s, ' s')} caption="For episodes with policy response" tone="green" icon="◷" />
+          <MetricCard label="Mean reaction time" value={metricValue(metrics?.average_reaction_time_s, ' s')} caption="Configured policy delay for responding episodes" tone="green" icon="◷" />
         </section>
+        <p className="metrics-note">
+          Run simulation adds one episode to the selected policy's rates. Policy evaluation starts a fresh batch for both policies.
+        </p>
 
         <div className="primary-grid">
           <ScenarioControls

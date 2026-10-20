@@ -85,14 +85,14 @@ export default function ScenarioControls({
       </select>
 
       <div className="control-actions">
-        <button className="button button-primary" onClick={onRunSimulation} disabled={simulationLoading || !controls.scenarioId}>
+        <button className="button button-primary" onClick={onRunSimulation} disabled={simulationLoading || evaluationLoading || !controls.scenarioId}>
           {simulationLoading ? <><span className="spinner" /> Running simulation</> : <><span>▶</span> Run simulation</>}
         </button>
-        <button className="button button-secondary" onClick={onRunEvaluation} disabled={evaluationLoading || scenarios.length === 0}>
+        <button className="button button-secondary" onClick={onRunEvaluation} disabled={evaluationLoading || simulationLoading || scenarios.length === 0}>
           {evaluationLoading ? <><span className="spinner" /> Evaluating</> : <><span>⇄</span> Run policy evaluation</>}
         </button>
       </div>
-      <p className="control-footnote">Evaluation runs 20 reproducible episodes per scenario, paired across both policies.</p>
+      <p className="control-footnote">Evaluation samples 20 paired episodes per scenario for both policies. Each single simulation also updates that policy's overview rates.</p>
     </section>
   )
 }
